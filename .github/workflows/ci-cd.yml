@@ -1,4 +1,4 @@
-name: CI/CD - Integration Test | E2E Test | Build | Artifact | Deploy
+name: CI/CD - API Integration Test | E2E Test | Build | Artifact | Deploy
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 env:
   NODE_VERSION: 20
   APP_PORT: 4000
-  BACKEND_DIR: backend
+  API_DIR: api
 
 jobs:
   integration-test:
@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ${{ env.BACKEND_DIR }}
+        working-directory: ${{ env.API_DIR }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: ${{ env.BACKEND_DIR }}/package-lock.json
+          cache-dependency-path: ${{ env.API_DIR }}/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -41,7 +41,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: integration-test-results
-          path: ${{ env.BACKEND_DIR }}/coverage/
+          path: ${{ env.API_DIR }}/coverage/
           retention-days: 7
 
   e2e-test:
@@ -50,7 +50,7 @@ jobs:
     needs: integration-test
     defaults:
       run:
-        working-directory: ${{ env.BACKEND_DIR }}
+        working-directory: ${{ env.API_DIR }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -60,7 +60,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: ${{ env.BACKEND_DIR }}/package-lock.json
+          cache-dependency-path: ${{ env.API_DIR }}/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -68,14 +68,14 @@ jobs:
       - name: Install production deps
         run: npm ci --omit=dev
 
-      - name: Start backend app (background)
+      - name: Start API server (background)
         run: |
           NODE_ENV=production PORT=${{ env.APP_PORT }} npm run start &>/dev/null &
           sleep 4
 
-      - name: Wait for backend to be ready
+      - name: Wait for API to be ready
         run: |
-          timeout 30 bash -c 'until curl -f http://localhost:${{ env.APP_PORT }}/health || curl -f http://localhost:${{ env.APP_PORT }}/; do sleep 1; done' || echo "Backend started"
+          timeout 30 bash -c 'until curl -f http://localhost:${{ env.APP_PORT }}/api/health; do sleep 1; done' || echo "API started"
 
       - name: Install Cypress binary
         run: npx cypress install
@@ -83,7 +83,7 @@ jobs:
       - name: Run Cypress E2E Tests (headless)
         uses: cypress-io/github-action@v6
         with:
-          working-directory: ${{ env.BACKEND_DIR }}
+          working-directory: ${{ env.API_DIR }}
           start: npm run start
           wait-on: http://localhost:${{ env.APP_PORT }}
           wait-on-timeout: 60
@@ -96,7 +96,7 @@ jobs:
     needs: e2e-test
     defaults:
       run:
-        working-directory: ${{ env.BACKEND_DIR }}
+        working-directory: ${{ env.API_DIR }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -106,7 +106,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: ${{ env.BACKEND_DIR }}/package-lock.json
+          cache-dependency-path: ${{ env.API_DIR }}/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -115,13 +115,13 @@ jobs:
       # - name: Build
       #   run: npm run build
 
-      - name: Upload backend artifact
+      - name: Upload API artifact
         uses: actions/upload-artifact@v4
         with:
-          name: backend-artifact
+          name: api-artifact
           path: |
-            ${{ env.BACKEND_DIR }}
-            !${{ env.BACKEND_DIR }}/node_modules
+            ${{ env.API_DIR }}
+            !${{ env.API_DIR }}/node_modules
           retention-days: 7
 
   deploy:
@@ -131,13 +131,13 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ${{ env.BACKEND_DIR }}
+        working-directory: ${{ env.API_DIR }}
     steps:
-      - name: Download backend artifact
+      - name: Download API artifact
         uses: actions/download-artifact@v4
         with:
-          name: backend-artifact
-          path: ./backend-artifact
+          name: api-artifact
+          path: ./api-artifact
 
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.8.1
@@ -146,7 +146,7 @@ jobs:
 
       - name: Copy artifact to server (rsync)
         run: |
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./backend-artifact/ \
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./api-artifact/ \
             ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SERVER_PATH }}
 
       - name: Deploy on server (install, env, pm2, nginx)
@@ -162,10 +162,6 @@ jobs:
 
             # Write .env from secrets (overwrite)
             cat > .env <<EOL
-          MONGO_URI=${{ secrets.ENV_MONGO_URI }}
-          JWT_SECRET=${{ secrets.ENV_JWT_SECRET }}
-          COOKIE_SECRET=${{ secrets.ENV_COOKIE_SECRET }}
-          CLIENT_URL=${{ secrets.ENV_CLIENT_URL }}
           NODE_ENV=${{ secrets.ENV_NODE_ENV }}
           PORT=${{ secrets.ENV_PORT }}
           EOL
@@ -175,13 +171,13 @@ jobs:
                         cat > ecosystem.config.js <<ECOSYSTEM
           module.exports = {
             apps: [{
-              name: 'backend-app',
-              script: 'src/server.js',
+              name: 'api-app',
+              script: 'server.js',
               instances: 'max',
               exec_mode: 'cluster',
               env: {
                 NODE_ENV: 'development',
-                PORT: 3000
+                PORT: 4000
               },
               env_production: {
                 NODE_ENV: 'production',
@@ -204,7 +200,7 @@ jobs:
                       sudo systemctl reload nginx || true
 
                       # Optional: run a health check and exit non-zero if fails
-                      curl -f https://serve.ekowlabs.space/ || true
+                      curl -f https://serve.ekowlabs.space/api/health || true
 
                       exit 0
           EOF
