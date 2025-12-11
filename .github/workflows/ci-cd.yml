@@ -160,7 +160,7 @@ jobs:
               sudo chown -R $USER:$USER /var/www/api
               sudo chmod -R 775 /var/www/api
             
-            EOF
+              
 
       - name: Copy artifact to server (rsync)
         run: |
