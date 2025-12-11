@@ -148,7 +148,7 @@ jobs:
           echo "=== Checking for package.json ==="
           ls -la ./api/package.json || echo "❌ package.json not found!"
 
-      - name: Create server directories if needed
+      - name: Check server paths and setup fallback
         env:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -159,51 +159,68 @@ jobs:
             echo "=== Current working directory ==="
             pwd
             
-            # Create primary server path
+            # Check if primary server path exists
             echo "=== Checking if SERVER_PATH exists ==="
             if [ -d "$SERVER_PATH" ]; then
               echo "✅ SERVER_PATH exists: $SERVER_PATH"
               ls -la "$SERVER_PATH"
+              echo "USE_PRIMARY_PATH=true" >> $GITHUB_ENV
             else
               echo "❌ SERVER_PATH does not exist: $SERVER_PATH"
-              echo "=== Creating SERVER_PATH ==="
-              sudo mkdir -p "$SERVER_PATH"
-              sudo chown $USER:$USER "$SERVER_PATH"
-              echo "✅ Created SERVER_PATH: $SERVER_PATH"
-              ls -la "$SERVER_PATH"
+              echo "=== Will use FALLBACK_PATH instead ==="
+              
+              # Create fallback directory if it doesn't exist
+              FALLBACK_PATH="${SERVER_PATH}_backup"
+              echo "=== Creating/verifying fallback directory: $FALLBACK_PATH ==="
+              sudo mkdir -p "$FALLBACK_PATH"
+              sudo chown $USER:$USER "$FALLBACK_PATH"
+              echo "✅ Fallback directory ready: $FALLBACK_PATH"
+              ls -la "$FALLBACK_PATH"
+              
+              echo "USE_PRIMARY_PATH=false" >> $GITHUB_ENV
+              echo "FALLBACK_PATH=$FALLBACK_PATH" >> $GITHUB_ENV
             fi
-            
-            # Create fallback directory as backup
-            FALLBACK_PATH="${SERVER_PATH}_backup"
-            echo "=== Creating fallback directory: $FALLBACK_PATH ==="
-            sudo mkdir -p "$FALLBACK_PATH"
-            sudo chown $USER:$USER "$FALLBACK_PATH"
-            echo "✅ Created fallback directory: $FALLBACK_PATH"
-            ls -la "$FALLBACK_PATH"
           EOF
 
       - name: Copy artifact to server (rsync)
         run: |
           echo "=== Starting rsync transfer ==="
-          echo "Primary deployment path: ${{ secrets.SERVER_PATH }}"
           
-          # Attempt primary deployment
-          if rsync -avz --rsync-path="sudo rsync" -e "ssh -o StrictHostKeyChecking=no" ./api/ \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SERVER_PATH }}; then
-            echo "✅ Primary deployment successful"
-          else
-            echo "⚠️ Primary deployment failed, trying fallback path..."
+          # Determine deployment strategy based on path availability
+          if [ "$USE_PRIMARY_PATH" = "true" ]; then
+            echo "Primary deployment path: ${{ secrets.SERVER_PATH }}"
             
-            # Fallback: Try alternative path
-            FALLBACK_PATH="${{ secrets.SERVER_PATH }}_backup"
-            echo "Fallback deployment path: $FALLBACK_PATH"
+            # Attempt primary deployment first, then fallback if it fails
+            if rsync -avz --rsync-path="sudo rsync" -e "ssh -o StrictHostKeyChecking=no" ./api/ \
+              ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SERVER_PATH }}; then
+              echo "✅ Primary deployment successful"
+            else
+              echo "⚠️ Primary deployment failed, trying fallback path..."
+              
+              # Fallback: Try alternative path
+              FALLBACK_PATH="${{ secrets.SERVER_PATH }}_backup"
+              echo "Fallback deployment path: $FALLBACK_PATH"
+              
+              if rsync -avz --rsync-path="sudo rsync" -e "ssh -o StrictHostKeyChecking=no" ./api/ \
+                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:$FALLBACK_PATH; then
+                echo "✅ Fallback deployment successful"
+                echo "FALLBACK_USED=true" >> $GITHUB_ENV
+              else
+                echo "❌ Both primary and fallback deployments failed"
+                exit 1
+              fi
+            fi
+          else
+            # Primary path doesn't exist, use fallback directly
+            echo "Primary path not found, using fallback path: $FALLBACK_PATH"
             
             if rsync -avz --rsync-path="sudo rsync" -e "ssh -o StrictHostKeyChecking=no" ./api/ \
               ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:$FALLBACK_PATH; then
               echo "✅ Fallback deployment successful"
               echo "FALLBACK_USED=true" >> $GITHUB_ENV
+              echo "PRIMARY_PATH_MISSING=true" >> $GITHUB_ENV
             else
-              echo "❌ Both primary and fallback deployments failed"
+              echo "❌ Fallback deployment failed"
               exit 1
             fi
           fi
@@ -244,7 +261,7 @@ jobs:
         env:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
-          SERVER_PATH: ${{ secrets.SERVER_PATH }}
+          SERVER_PATH: ${{ secrets.SERVER_PATH || '/var/www/api' }}
         run: |
           # Determine which path to deploy to based on whether fallback was used
           DEPLOY_PATH="$SERVER_PATH"
@@ -349,10 +366,17 @@ jobs:
         run: |
           echo "=== Deployment Status Summary ==="
           if [ "$FALLBACK_USED" = "true" ]; then
-            echo "⚠️  Deployment completed using FALLBACK PATH"
-            echo "Primary path: ${{ secrets.SERVER_PATH }}"
-            echo "Fallback path: ${{ secrets.SERVER_PATH }}_backup"
-            echo "🔧 Action required: Check primary path for issues"
+            if [ "$PRIMARY_PATH_MISSING" = "true" ]; then
+              echo "⚠️  Primary path not found - used FALLBACK PATH"
+              echo "Primary path: ${{ secrets.SERVER_PATH }} (missing)"
+              echo "Fallback path: ${{ secrets.SERVER_PATH }}_backup"
+              echo "🔧 Action required: Create or fix primary deployment path"
+            else
+              echo "⚠️  Primary deployment failed - used FALLBACK PATH"
+              echo "Primary path: ${{ secrets.SERVER_PATH }}"
+              echo "Fallback path: ${{ secrets.SERVER_PATH }}_backup"
+              echo "🔧 Action required: Check primary path for issues"
+            fi
           else
             echo "✅ Deployment completed successfully using PRIMARY PATH"
             echo "Deployment path: ${{ secrets.SERVER_PATH }}"
