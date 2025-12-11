@@ -59,9 +59,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: ${{ env.API_DIR }}/package-lock.json
+          working-directory: ${{ env.API_DIR }}
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          cd api
+          npm ci
 
       - name: Start API server
         run: |
