@@ -7,5 +7,7 @@ export default {
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
   moduleFileExtensions: ['js', 'json'],
   testMatch: ['**/tests/**/*.test.js'],
-  verbose: true
+  verbose: true,
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html']
 };
