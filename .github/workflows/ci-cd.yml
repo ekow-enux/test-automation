@@ -165,8 +165,8 @@ jobs:
         run: |
           echo "=== Copying artifact to server via SCP ==="
           
-          # Create deployment directory if it doesn't exist
-          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "sudo mkdir -p $DEPLOY_PATH && sudo chown $USER:$USER $DEPLOY_PATH"
+          # Create deployment directory if it doesn't exist and set proper ownership
+          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "sudo mkdir -p $DEPLOY_PATH && sudo chown $SSH_USER:$SSH_USER $DEPLOY_PATH"
           
           # Copy the zip artifact to server
           scp -o StrictHostKeyChecking=no app.zip $SSH_USER@$SSH_HOST:$DEPLOY_PATH/
@@ -189,6 +189,12 @@ jobs:
             echo "=== Starting deployment process ==="
             cd "$DEPLOY_PATH"
             
+            # Set execute permissions on deploy.sh
+            if [ -f "deploy.sh" ]; then
+              chmod +x deploy.sh
+              echo "✅ deploy.sh permissions set"
+            fi
+            
             # Extract the new deployment
             echo "=== Extracting new deployment ==="
             if [ -f "app.zip" ]; then
@@ -209,10 +215,9 @@ jobs:
             # Run the deployment script
             echo "=== Running deployment script ==="
             if [ -f "deploy.sh" ]; then
-              chmod +x deploy.sh
               ./deploy.sh
             else
-              echo "❌ deploy.sh not found!"
+              echo "❌ deploy.sh not found in current deployment!"
               exit 1
             fi
             
