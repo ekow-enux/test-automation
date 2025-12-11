@@ -75,10 +75,10 @@ jobs:
           PORT: ${{ env.APP_PORT }}
         with:
           working-directory: ${{ env.API_DIR }}
+          config-file: cypress.config.js
           start: npm run start
           wait-on: http://localhost:${{ env.APP_PORT }}/api/health
           wait-on-timeout: 120
-          command: npx cypress run
           browser: chrome
 
   build-artifact:
