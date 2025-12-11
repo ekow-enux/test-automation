@@ -186,6 +186,9 @@ jobs:
                       fi
 
                       # Install production deps
+                      # First run npm install to generate package-lock.json if missing
+                      npm install --omit=dev
+                      # Then run npm ci for clean production install
                       npm ci --omit=dev
 
                       # Ensure pm2, then start/restart app using ecosystem
