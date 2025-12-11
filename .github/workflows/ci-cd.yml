@@ -154,13 +154,33 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SERVER_PATH: ${{ secrets.SERVER_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=no \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-              sudo mkdir -p /var/www/api
-              sudo chown -R $USER:$USER /var/www/api
-              sudo chmod -R 775 /var/www/api
+          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST << 'EOF'
+            set -e
+            echo "=== Current working directory ==="
+            pwd
             
+            # Check if primary server path exists
+            echo "=== Checking if SERVER_PATH exists ==="
+            if [ -d "$SERVER_PATH" ]; then
+              echo "✅ SERVER_PATH exists: $SERVER_PATH"
+              ls -la "$SERVER_PATH"
+              echo "USE_PRIMARY_PATH=true" >> $GITHUB_ENV
+            else
+              echo "❌ SERVER_PATH does not exist: $SERVER_PATH"
+              echo "=== Will use FALLBACK_PATH instead ==="
               
+              # Create fallback directory if it doesn't exist
+              FALLBACK_PATH="${SERVER_PATH}_backup"
+              echo "=== Creating/verifying fallback directory: $FALLBACK_PATH ==="
+              sudo mkdir -p "$FALLBACK_PATH"
+              sudo chown $USER:$USER "$FALLBACK_PATH"
+              echo "✅ Fallback directory ready: $FALLBACK_PATH"
+              ls -la "$FALLBACK_PATH"
+              
+              echo "USE_PRIMARY_PATH=false" >> $GITHUB_ENV
+              echo "FALLBACK_PATH=$FALLBACK_PATH" >> $GITHUB_ENV
+            fi
+          EOF
 
       - name: Copy artifact to server (rsync)
         run: |
