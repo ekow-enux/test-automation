@@ -31,7 +31,7 @@ jobs:
           cache-dependency-path: ${{ env.API_DIR }}/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
       - name: Run Jest Unit Tests
         run: npm run test
@@ -63,12 +63,7 @@ jobs:
           cache-dependency-path: ${{ env.API_DIR }}/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
-
-      - name: Verify Cypress installation
-        run: |
-          npm list cypress
-          npx cypress --version
+        run: npm ci --include=dev
 
       - name: Install Cypress binary
         run: npx cypress install
@@ -105,7 +100,7 @@ jobs:
           cache-dependency-path: ${{ env.API_DIR }}/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
       # Since this is JavaScript, no build step is needed
       # - name: Build
