@@ -143,7 +143,7 @@ jobs:
 
       - name: Copy artifact to server (rsync)
         run: |
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./api-artifact/ \
+          rsync -avz --rsync-path="sudo rsync" -e "ssh -o StrictHostKeyChecking=no" ./api-artifact/ \
             ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SERVER_PATH }}
 
       - name: Deploy on server (install, env, pm2, nginx)
