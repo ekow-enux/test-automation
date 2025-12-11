@@ -148,7 +148,7 @@ jobs:
           echo "=== Checking for package.json ==="
           ls -la ./api/package.json || echo "❌ package.json not found!"
 
-      - name: Create server directory if needed
+      - name: Create server directories if needed
         env:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -158,6 +158,8 @@ jobs:
             set -e
             echo "=== Current working directory ==="
             pwd
+            
+            # Create primary server path
             echo "=== Checking if SERVER_PATH exists ==="
             if [ -d "$SERVER_PATH" ]; then
               echo "✅ SERVER_PATH exists: $SERVER_PATH"
@@ -170,13 +172,42 @@ jobs:
               echo "✅ Created SERVER_PATH: $SERVER_PATH"
               ls -la "$SERVER_PATH"
             fi
+            
+            # Create fallback directory as backup
+            FALLBACK_PATH="${SERVER_PATH}_backup"
+            echo "=== Creating fallback directory: $FALLBACK_PATH ==="
+            sudo mkdir -p "$FALLBACK_PATH"
+            sudo chown $USER:$USER "$FALLBACK_PATH"
+            echo "✅ Created fallback directory: $FALLBACK_PATH"
+            ls -la "$FALLBACK_PATH"
           EOF
 
       - name: Copy artifact to server (rsync)
         run: |
           echo "=== Starting rsync transfer ==="
-          rsync -avz --rsync-path="sudo rsync" -e "ssh -o StrictHostKeyChecking=no" ./api/ \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SERVER_PATH }}
+          echo "Primary deployment path: ${{ secrets.SERVER_PATH }}"
+          
+          # Attempt primary deployment
+          if rsync -avz --rsync-path="sudo rsync" -e "ssh -o StrictHostKeyChecking=no" ./api/ \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SERVER_PATH }}; then
+            echo "✅ Primary deployment successful"
+          else
+            echo "⚠️ Primary deployment failed, trying fallback path..."
+            
+            # Fallback: Try alternative path
+            FALLBACK_PATH="${{ secrets.SERVER_PATH }}_backup"
+            echo "Fallback deployment path: $FALLBACK_PATH"
+            
+            if rsync -avz --rsync-path="sudo rsync" -e "ssh -o StrictHostKeyChecking=no" ./api/ \
+              ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:$FALLBACK_PATH; then
+              echo "✅ Fallback deployment successful"
+              echo "FALLBACK_USED=true" >> $GITHUB_ENV
+            else
+              echo "❌ Both primary and fallback deployments failed"
+              exit 1
+            fi
+          fi
+          
           echo "=== Rsync completed ==="
 
       - name: Verify rsync transfer
@@ -185,18 +216,26 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SERVER_PATH: ${{ secrets.SERVER_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST << 'EOF'
+          # Determine which path to verify based on whether fallback was used
+          DEPLOY_PATH="$SERVER_PATH"
+          if [ "$FALLBACK_USED" = "true" ]; then
+            DEPLOY_PATH="${SERVER_PATH}_backup"
+          fi
+          
+          echo "=== Verifying transfer to deployment path: $DEPLOY_PATH ==="
+          
+          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST << EOF
             set -e
-            echo "=== Verifying transfer to SERVER_PATH ==="
-            ls -la "$SERVER_PATH"
+            echo "=== Checking deployment path: $DEPLOY_PATH ==="
+            ls -la "$DEPLOY_PATH"
             echo "=== Checking for package.json on server ==="
-            if [ -f "$SERVER_PATH/package.json" ]; then
-              echo "✅ package.json found on server"
-              cat "$SERVER_PATH/package.json" | head -10
+            if [ -f "$DEPLOY_PATH/package.json" ]; then
+              echo "✅ package.json found on server at $DEPLOY_PATH"
+              cat "$DEPLOY_PATH/package.json" | head -10
             else
-              echo "❌ package.json NOT found on server!"
-              echo "=== Contents of SERVER_PATH ==="
-              find "$SERVER_PATH" -type f | head -20
+              echo "❌ package.json NOT found on server at $DEPLOY_PATH!"
+              echo "=== Contents of deployment path ==="
+              find "$DEPLOY_PATH" -type f | head -20
               exit 1
             fi
           EOF
@@ -207,21 +246,29 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SERVER_PATH: ${{ secrets.SERVER_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST << 'EOF'
+          # Determine which path to deploy to based on whether fallback was used
+          DEPLOY_PATH="$SERVER_PATH"
+          if [ "$FALLBACK_USED" = "true" ]; then
+            DEPLOY_PATH="${SERVER_PATH}_backup"
+          fi
+          
+          echo "=== Starting deployment to: $DEPLOY_PATH ==="
+          
+          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST << EOF
             set -e
             
             echo "=== Starting deployment ==="
             echo "Current directory: $(pwd)"
-            echo "SERVER_PATH: $SERVER_PATH"
+            echo "DEPLOY_PATH: $DEPLOY_PATH"
             
-            # Navigate to SERVER_PATH with error checking
-            if [ ! -d "$SERVER_PATH" ]; then
-              echo "❌ ERROR: SERVER_PATH directory does not exist: $SERVER_PATH"
+            # Navigate to deployment path with error checking
+            if [ ! -d "$DEPLOY_PATH" ]; then
+              echo "❌ ERROR: DEPLOY_PATH directory does not exist: $DEPLOY_PATH"
               exit 1
             fi
             
-            cd "$SERVER_PATH" || {
-              echo "❌ ERROR: Failed to cd into SERVER_PATH: $SERVER_PATH"
+            cd "$DEPLOY_PATH" || {
+              echo "❌ ERROR: Failed to cd into DEPLOY_PATH: $DEPLOY_PATH"
               exit 1
             }
             
@@ -297,3 +344,17 @@ jobs:
                       echo "🎉 Deployment completed successfully!"
                       exit 0
           EOF
+          
+      - name: Deployment Status Notification
+        run: |
+          echo "=== Deployment Status Summary ==="
+          if [ "$FALLBACK_USED" = "true" ]; then
+            echo "⚠️  Deployment completed using FALLBACK PATH"
+            echo "Primary path: ${{ secrets.SERVER_PATH }}"
+            echo "Fallback path: ${{ secrets.SERVER_PATH }}_backup"
+            echo "🔧 Action required: Check primary path for issues"
+          else
+            echo "✅ Deployment completed successfully using PRIMARY PATH"
+            echo "Deployment path: ${{ secrets.SERVER_PATH }}"
+          fi
+          echo "=== Deployment Complete ==="
