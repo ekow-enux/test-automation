@@ -121,10 +121,10 @@ jobs:
             -x "cypress/screenshots/*" \
             -x ".env*" \
             -x "*.log"
-          echo "=== Including deploy.sh in artifact ==="
-          zip -u app.zip deploy.sh
           echo "=== Artifact created ==="
           ls -la app.zip
+          echo "=== Verifying deploy.sh is included ==="
+          unzip -l app.zip | grep deploy.sh || echo "Warning: deploy.sh not found in artifact"
 
       - name: Upload deployment artifact
         uses: actions/upload-artifact@v4
