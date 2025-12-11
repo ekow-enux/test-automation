@@ -212,10 +212,10 @@ jobs:
               exit 1
             fi
             
-            # Run the deployment script
-            echo "=== Running deployment script ==="
+            # Run the deployment script with sudo
+            echo "=== Running deployment script with sudo ==="
             if [ -f "deploy.sh" ]; then
-              ./deploy.sh
+              sudo ./deploy.sh
             else
               echo "❌ deploy.sh not found in current deployment!"
               exit 1
