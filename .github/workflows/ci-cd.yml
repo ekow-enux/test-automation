@@ -141,7 +141,7 @@ jobs:
           path: ./api-artifact
 
       - name: Setup SSH agent
-        uses: webfactory/ssh-agent@v0.8.1
+        uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_KEY }}
 
