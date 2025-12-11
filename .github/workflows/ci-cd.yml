@@ -59,7 +59,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: ${{ env.API_DIR }}/package-lock.json
-          working-directory: ${{ env.API_DIR }}
 
       - name: Install dependencies
         run: |
@@ -130,9 +129,6 @@ jobs:
     needs: build-artifact
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.API_DIR }}
     steps:
       - name: Download API artifact
         uses: actions/download-artifact@v4
