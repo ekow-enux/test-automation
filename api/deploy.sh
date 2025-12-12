@@ -66,10 +66,10 @@ else
 fi
 print_status "Dependencies installed"
 
-# Create ecosystem.config.js if it doesn't exist
-if [ ! -f "ecosystem.config.js" ]; then
-    print_status "Creating ecosystem.config.js"
-    cat > ecosystem.config.js <<'ECOSYSTEM'
+# Create ecosystem.config.cjs if it doesn't exist (using .cjs for ES module compatibility)
+if [ ! -f "ecosystem.config.cjs" ]; then
+    print_status "Creating ecosystem.config.cjs"
+    cat > ecosystem.config.cjs <<'ECOSYSTEM'
 module.exports = {
   apps: [{
     name: 'api-app',
@@ -95,9 +95,9 @@ module.exports = {
   }]
 };
 ECOSYSTEM
-    print_status "ecosystem.config.js created"
+    print_status "ecosystem.config.cjs created"
 else
-    print_status "ecosystem.config.js already exists"
+    print_status "ecosystem.config.cjs already exists"
 fi
 
 # Create logs directory if it doesn't exist
@@ -109,7 +109,7 @@ pm2 delete api-app 2>/dev/null || true
 
 # Start the application with PM2
 print_status "Starting application with PM2"
-pm2 start ecosystem.config.js --env production
+pm2 start ecosystem.config.cjs --env production
 
 # Save PM2 configuration
 pm2 save
